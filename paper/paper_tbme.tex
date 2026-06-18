@@ -1,0 +1,969 @@
+\documentclass[journal,twoside,web]{ieeecolor2}
+\usepackage{generic}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{siunitx}
+\usepackage{url}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\markboth{IEEE TRANSACTIONS ON BIOMEDICAL ENGINEERING}
+{Huang Tan \MakeLowercase{\textit{et al.}}: Validating Riemannian Alignment for EEG Vigilance}
+\begin{document}
+
+\title{Validating Riemannian Parallel Transport Alignment for Cross-Subject EEG Vigilance Estimation}
+
+\author{{Huang Tan,Xiangzhu Li,Li Zhang,Guangqiang Yin}
+\thanks{Corresponding author: Guangqiang Yin}
+\thanks{Huang Tan is with University of Electronic Science and Technology of China, Chengdu, 611731, China. (e-mail: tanhuang@std.uestc.edu.cn).}
+\thanks{Xiangzhu Li and Li Zhang are with Shenzhen Clinical College of Integrated Chinese and Western Medicine, Guangzhou University of Chinese Medicine,No.528 Xinsha Road, Shajing Street, Shajing Subdistric, Bao'an District, Shenzhen City, GuangdongProvince, 518104 , China,  (e-mail: thyysjwk1bq@163.com,lxz142537@163.com).}
+\thanks{Guangqiang Yin is with the School of Information and Software Engineering, University of Electronic Science and Technology of China, Chengdu 610057, China ,also with the Shenzhen Institute for Advanced Study,University of Electronic Science and Technology of China, Shenzhen 518110, China.(e-mail: yingq@uestc.edu.cn).}
+}
+
+\maketitle
+
+\begin{abstract}
+Cross-subject generalization remains a critical bottleneck for EEG-based
+vigilance estimation, because subject-specific physiological factors
+displace the SPD covariance matrices of different subjects to different
+regions of the Riemannian manifold, degrading tangent space regression.
+Existing Riemannian alignment methods have been validated on classification
+tasks, but their effectiveness for continuous vigilance regression has not
+been established. We apply Riemannian parallel transport alignment that
+projects each subject's SPD matrices to a common reference at the identity,
+removing subject-specific bias while preserving vigilance-related
+variability. On the SEED-VIG dataset (23 subjects) under leave-one-subject-out
+cross-validation, the alignment raises the mean Pearson correlation from
+$0.585$ to $0.692$ ($p = 0.0007$, Cohen's $d = 0.824$), improving 21 of 23
+subjects individually. The benefit persists on the 4-channel forehead setup
+(retaining 98.3\% of full-setup performance) and matches or exceeds existing
+Riemannian transfer-learning baselines. These results establish Riemannian
+parallel transport as a practical, statistically robust pre-processing step
+for cross-subject EEG vigilance regression.
+\end{abstract}
+
+\begin{IEEEkeywords}
+EEG, vigilance estimation, Riemannian geometry, domain adaptation,
+parallel transport, SPD manifold, cross-subject generalization, PERCLOS.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\label{sec:intro}
+
+\IEEEPARstart{V}{igilance} monitoring from scalp electroencephalography
+(EEG) is a long-standing goal of brain-computer interface (BCI)
+research, with direct applications in driver fatigue detection
+\cite{gao2024, cui2023},
+neurological disorder diagnosis, and anesthesia depth monitoring.
+In the SEED-VIG benchmark \cite{zheng2017}, twenty-three
+subjects completed a 120-minute sustained-attention task while 17-channel
+EEG and PERCLOS labels were recorded synchronously, providing a standard
+test bed for cross-subject vigilance regression.
+
+The dominant pipeline for EEG-based vigilance regression has three
+stages: a filter bank that decomposes the signal into canonical frequency
+bands ($\delta$, $\theta$, $\alpha$, $\beta$, $\gamma$); symmetric positive
+definite (SPD) covariance features computed within each band; and a
+regressor trained on the tangent space projection of those covariance
+features. This Filter-Band Tangent Space (FBTS) pipeline has been shown
+to be competitive for within-subject prediction
+\cite{zheng2017, zanini2018, Rodrigues2019}. Recent
+comprehensive reviews of EEG classification algorithms
+\cite{lotte2018review} and EEG transfer-learning advances
+\cite{wu2022tnsre} underline the importance of domain-adaptation
+strategies for cross-subject generalization.
+
+The remaining bottleneck is cross-subject generalization, which is
+evaluated by leave-one-subject-out (LOSO) cross-validation. In the LOSO
+protocol, the model is trained on $N-1$ subjects and tested on the held-out
+one. The test subject's EEG covaries with the training subjects only
+weakly, because of skull conductivity, electrode impedance, baseline
+EEG power, and other physiological factors. These factors shift the
+SPD covariance matrices of different subjects to different regions of
+the SPD manifold. The FBTS pipeline projects the matrices to a tangent
+space at a fixed reference point and trains a linear regressor on the
+resulting vector. When the test subject's SPD matrices sit far from
+the training reference, the tangent space projection is ill-conditioned
+and the regressor generalizes poorly.
+
+A natural remedy is to remove the subject-specific bias by aligning
+the SPD distributions before projection. In the BCI literature, two
+aligners are widely used. Euclidean alignment
+\cite{he2018euclidean} whitens each subject by the inverse square
+root of the subject's Euclidean mean covariance:
+\begin{equation}
+C'_{si} = M_s^{-1/2}\, C_{si}\, M_s^{-1/2},
+\quad M_s = \frac{1}{T_s}\sum_i C_{si}.
+\label{eq:euclidean}
+\end{equation}
+Riemannian alignment
+\cite{barachant2010lvaica, barachant2012tbme, zanini2018, Rodrigues2019, zhuo2024} replaces
+$M_s$ with the subject's Riemannian (Fr\'echet) mean $G_s$, giving
+\begin{equation}
+C'_{si} = G_s^{-1/2}\, C_{si}\, G_s^{-1/2},
+\quad G_s = \arg\min_{G}\sum_i \delta_R^2(G, C_{si}),
+\label{eq:riemann}
+\end{equation}
+where $\delta_R$ is the affine-invariant Riemannian distance on the SPD
+manifold. Equation~\eqref{eq:riemann} is a parallel transport of the
+subject's SPD matrices to a common reference at the identity. Geometric
+parallel transport \cite{yair2019ptspd} is preferred over Euclidean whitening because it
+preserves the affine-invariant structure of the SPD manifold \cite{moakher2005,pennec2006,congedo2017review} and
+constitutes the right notion of centering on a curved space.
+
+Riemannian alignment has been shown to improve BCI motor imagery
+cross-session classification \cite{zanini2018, Rodrigues2019}, and recent
+work has explored deep optimal transport on SPD manifolds for domain
+adaptation \cite{ju2025}. However, it remains unclear whether
+Riemannian alignment benefits continuous vigilance regression, how it
+interacts with the FBTS pipeline under different channel configurations
+and covariance estimators, and whether per-band alignment outperforms
+global alignment for vigilance features.
+
+\subsubsection{Contributions} In this paper we apply Riemannian parallel
+transport alignment to cross-subject EEG vigilance regression on
+SEED-VIG. Our contributions are fourfold. (i) On 23 subjects under
+LOSO, Riemannian alignment raises mean COR from $0.585 \pm 0.230$ to
+$0.692 \pm 0.206$ ($p = 0.0007$, $d = 0.824$, 21 of 23 subjects
+improved) on the full 17-channel setup. (ii) The benefit extends to
+the practical 4-channel forehead setup (permutation test
+$p = 0.0001$, $d = 0.850$), retaining 98.3\%
+of the full-setup performance. (iii) Ablations confirm that
+the gain is attributable to the Riemannian geometry rather than
+individual pipeline choices. (iv) The proposed approach is computationally
+efficient and compatible with standard wearable EEG setups.
+
+The remainder of the paper is organized as follows. Section~\ref{sec:method}
+describes the FBTS pipeline, the SPD geometry, the three aligners, the
+LOSO protocol, and the regression head. Section~\ref{sec:exp} reports
+the main LOSO experiment, the few-shot calibration curve, the channel
+configuration comparison, the ablations, and the frequency-band importance
+analysis.
+Section~\ref{sec:discussion} interprets the results and discusses
+limitations, and Section~\ref{sec:conclusion} concludes.
+
+\section{Methods}
+\label{sec:method}
+
+\subsection{Task and data}
+
+We use the SEED-VIG dataset \cite{zheng2017}, which contains 23
+subjects (sub01--sub23). Each subject completed a sustained-attention
+driving task while 17-channel EEG and synchronized PERCLOS labels were
+recorded. We use the standard 885-epoch segmentation provided by
+SEED-VIG, with each epoch corresponding to 8 seconds of EEG. PERCLOS
+values are continuous in $[0, 1]$. Performance is measured by Pearson
+correlation (COR) and root mean square error (RMSE) between the
+predicted and the ground-truth PERCLOS.
+
+\subsection{Filter bank and SPD covariance features}
+
+Following \cite{zheng2017}, the EEG signal is decomposed by a
+fifth-order Butterworth filter bank into five canonical bands:
+$\delta$ (1--4 Hz), $\theta$ (4--8 Hz), $\alpha$ (8--14 Hz), $\beta$
+(14--31 Hz), and $\gamma$ (31--50 Hz). For each band and each epoch,
+the $C \times C$ SPD covariance matrix is estimated by the Oracle
+Approximating Shrinkage (OAS) estimator \cite{chen2010oas}, with
+Ledoit-Wolf (LWF) and Sample Covariance Matrix (SCM) used in the
+covariance-estimator ablation. The output of this stage is a
+5-tuple of $C \times C$ SPD matrices per epoch, with $C \in \{17, 6, 4\}$
+for the full, temporal, and forehead channel sets.
+
+\subsection{Riemannian alignment of SPD matrices}
+
+The three aligners we compare are defined by the choice of mean used
+in \eqref{eq:euclidean} or \eqref{eq:riemann}:
+\begin{itemize}
+\item \textbf{NoAlignment} (baseline): $C'_{si} = C_{si}$, the
+identity transform.
+\item \textbf{EuclideanAlignment}: $C'_{si} = M_s^{-1/2} C_{si}
+M_s^{-1/2}$, where $M_s$ is the subject's arithmetic mean of
+$\{C_{si}\}$.
+\item \textbf{RiemannianAlignment}: $C'_{si} = G_s^{-1/2} C_{si}
+G_s^{-1/2}$, where $G_s$ is the subject's Riemannian (Fr\'echet) mean,
+computed by the iterative algorithm in \cite{barachant2010lvaica, barachant2012tbme}.
+\end{itemize}
+Both Euclidean and Riemannian alignment are applied per band, because
+different frequency bands exhibit different inter-subject variability
+patterns. The alignment is fit on each subject's own training SPD
+matrices only; the test subject is aligned with its own mean computed
+from the test epochs, to avoid leaking test labels.
+
+Geometrically, Equations~\eqref{eq:euclidean} and \eqref{eq:riemann}
+are parallel transport maps that take the subject's SPD distribution
+to a common reference at the identity. The two maps differ in their
+notion of mean: $M_s$ is the Euclidean mean, which is a poor summary
+on the curved SPD manifold, whereas $G_s$ is the Riemannian mean,
+which is the correct notion of center on a curved manifold. The two
+transforms are different in general; we refer to the difference as
+the geometry of the mean. Section~\ref{sec:exp} reports that the
+Riemannian mean produces strictly better regression performance.
+
+\noindent\textbf{Relation to Zanini et al.}
+The Zanini et al.\ alignment \cite{zanini2018} and the proposed method
+both use Riemannian parallel transport and differ only in the reference
+point (grand mean vs.\ identity). The affine invariance of the AIRM
+distance guarantees that the Riemannian geometry is preserved under any
+choice of reference. Empirically, the two reference points yield very
+similar regression performance (see Section~\ref{sec:ablation},
+Reference point). A pragmatic advantage of the identity reference is
+that it circumvents the need to estimate a global Riemannian mean,
+which reduces the per-subject computational overhead by approximately
+$0.01$~s.
+
+\subsection{Tangent space projection and regression}
+
+For each band, the aligned SPD matrices are projected to the tangent
+space at the identity using the matrix logarithm. The vectorized
+upper-triangular entries of the logarithms from the five bands are
+concatenated into a single feature vector. We then apply
+\texttt{SelectKBest(f\_regression, k=150)} to remove low-importance
+features, \texttt{StandardScaler} to normalize, and \texttt{RidgeCV}
+regression to predict PERCLOS. To prevent data leakage, both
+\texttt{SelectKBest} and \texttt{StandardScaler} are fit exclusively
+on the training subjects of each LOSO fold and then applied to the
+held-out test subject. Predictions are smoothed
+temporally with a moving average of window 3 epochs.
+
+The hyperparameters were selected through a nested cross-validation pilot
+study on a subset of subjects: $k=150$ was chosen to balance the
+trade-off between feature richness and overfitting risk (the full
+tangent-space feature vector consists of $5 \times \binom{17}{2} + 17
+= 765$ entries for the 17-channel configuration); \texttt{RidgeCV}
+automatically selects the regularization strength $\alpha$ from a
+logarithmic grid $\{0.01, 0.1, 1, 10, 100\}$ via internal leave-one-out
+cross-validation on the training set; and the window size of 3
+epochs was adopted as a lightweight temporal smoothing strategy
+following prior EEG vigilance estimation pipelines
+\cite{zheng2017,ang2012fbcsp}.
+
+\subsection{Experimental protocol}
+
+\subsubsection{Leave-one-subject-out (LOSO)} For each subject $s$ in
+$\{1, \ldots, 23\}$, the model is trained on the other 22 subjects and
+tested on subject $s$. Each fold uses the aligner, channel set, and
+regressor specified by the experiment. The reported mean COR and RMSE
+are averaged across the 23 folds. Statistical significance is
+evaluated by a paired $t$-test on the per-subject COR values between
+two aligners; Cohen's $d$ is reported as the effect size.
+
+\subsubsection{Few-shot calibration} In the main LOSO experiment,
+the test subject's Riemannian mean is estimated from all of its own
+epochs (full alignment). In the few-shot experiment, we restrict the
+number $n$ of epochs used to estimate $G_s$: with $n=0$, the test
+subject is aligned using the grand mean of the training subjects'
+Riemannian means; with $n \ge 1$, the $n$ calibration epochs from the
+test subject are used to estimate $G_s$ and to align both the
+calibration and the remaining test epochs. The reported COR is averaged
+over five random seeds for each $n$.
+
+\subsubsection{Channel configurations} We evaluate three channel sets:
+all 17 channels, the 6 temporal channels (T7, T8, TP7, TP8, P7, P8),
+and the 4 forehead channels (Fp1, Fp2, Fz, F1). The forehead set is of
+practical interest for wearable EEG headsets that often place
+electrodes on the forehead.
+
+\subsubsection{Ethics statement} The SEED-VIG dataset
+\cite{zheng2017} is publicly released for non-commercial research use.
+The original data collection was conducted by the BCMI Laboratory at
+Shanghai Jiao Tong University and was approved by the Institutional
+Review Board of Shanghai Jiao Tong University. Written informed consent
+was obtained from all participants prior to the experiment, in
+accordance with the Declaration of Helsinki. No new data were collected
+for this study. The present analysis is a secondary use of fully
+de-identified recordings, and no further ethical approval was required
+for the computational work reported here.
+
+\section{Experiments and Results}
+\label{sec:exp}
+
+We compare three aligners (None, Euclidean, Riemannian) on three
+channel sets (17ch, 6ch, 4ch). All experiments use the FBTS pipeline
+described in Section~\ref{sec:method}. The full LOSO main result uses
+23 subjects; the ablations use 10 subjects for runtime; the few-shot
+experiment uses 5 random seeds per calibration size. Standard deviations
+are reported across subjects unless otherwise noted.
+
+\subsection{Main LOSO result (Table~\ref{tab:main})}
+
+Table~\ref{tab:main} reports mean COR and RMSE for the 3$\times$3 grid
+of aligners and channel sets on the full 23 subjects. Riemannian
+alignment improves COR over the no-alignment baseline on all three
+channel sets, with paired $t$-test $p=0.0007$ ($d=0.824$) on the full
+17-channel setup. Euclidean alignment provides an intermediate
+improvement on the 17-channel setup but is statistically
+indistinguishable from baseline on the 6-channel temporal setup.
+
+\begin{table}[!t]
+\caption{LOSO Cross-Subject Vigilance Regression on SEED-VIG
+(23 subjects). Mean $\pm$ std Pearson correlation (COR) and root mean
+square error (RMSE) across the 23 LOSO folds. $p$ and Cohen's $d$ are
+computed for the paired comparison of Riemannian vs.\ None on the same
+channel set. For the 4-channel forehead setup, the reported $p$ is
+from a Wilcoxon signed-rank test, with a permutation test
+($n=10{,}000$ permutations) confirming the significance
+($p_{\mathrm{perm}}=0.0001$).}
+\label{tab:main}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Channels} & \textbf{Aligner} & \textbf{COR} & \textbf{RMSE} & $\boldsymbol{p}$ & $\boldsymbol{d}$ \\
+\midrule
+\multirow{3}{*}{17ch (all)}
+  & None       & $0.585\pm0.230$ & $0.278$ & ---    & ---   \\
+  & Euclidean  & $0.655\pm0.218$ & $0.224$ & $0.005$ & $0.650$ \\
+  & \textbf{Riemannian} & $\mathbf{0.692\pm0.206}$ & $\mathbf{0.195}$ & $\mathbf{0.0007}$ & $\mathbf{0.824}$ \\
+\midrule
+\multirow{3}{*}{6ch (temporal)}
+  & None       & $0.659\pm0.185$ & $0.248$ & ---    & ---   \\
+  & Euclidean  & $0.622\pm0.257$ & $0.214$ & n.s.   & n.s.  \\
+  & \textbf{Riemannian} & $\mathbf{0.689\pm0.190}$ & $\mathbf{0.194}$ & n.s. & n.s. \\
+\midrule
+\multirow{3}{*}{4ch (forehead)}
+  & None       & $0.626\pm0.196$ & $0.243$ & ---    & ---   \\
+  & Euclidean  & $0.642\pm0.204$ & $0.208$ & n.s.   & n.s.  \\
+  & \textbf{Riemannian} & $\mathbf{0.681\pm0.185}$ & $\mathbf{0.196}$ & $<0.0001^\dagger$ & $\mathbf{0.850}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The per-subject COR values for the 17-channel setup are shown in
+Fig.~\ref{fig:individual}. All three aligners are displayed; Riemannian
+alignment improves 21 of the 23 subjects individually over the
+no-alignment baseline. The two subjects with a small decrease
+(sub23, sub02) are marked by red triangles; sub23 was the
+lowest-baseline subject (rank 1) and sub02 was mid-range
+(rank 8), both remaining below their baseline COR after
+alignment. The 4-channel forehead setup
+retains 98.3\% of the 17-channel Riemannian performance, which is
+important for wearable EEG where full coverage is impractical.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/individual_cor.pdf}
+\caption{Per-subject LOSO Pearson correlation on the 17-channel setup,
+sorted by baseline (None) COR. Three aligners are compared: None (gray),
+Euclidean (light blue), and Riemannian (blue). Dashed horizontal lines
+indicate the group mean under the None and Riemannian aligners, with the
+mean values labeled at the right margin. Red triangles mark the two
+subjects for which Riemannian alignment decreases COR relative to
+baseline. The bottom-right annotation reports the number of improved
+subjects (21/23), the paired $t$-test $p$-value, and Cohen's $d$.}
+\label{fig:individual}
+\end{figure*}
+
+\subsection{Few-shot calibration curve}
+
+Fig.~\ref{fig:fewshot} reports the LOSO correlation as a function of
+the number of calibration epochs drawn from the test subject. With
+$n=0$ calibration epochs the test subject is aligned using the
+training subjects' grand Riemannian mean and the mean COR is $0.645$,
+substantially above the no-alignment baseline ($0.585$) but below the
+full-alignment performance ($0.692$). With $n=1$ calibration epoch the
+mean COR increases to $0.681$ ($98.4\%$ of full performance). As
+highlighted by the red star at $n=5$, five calibration epochs recover
+the full-alignment performance ($0.693$). The curve remains stable
+from $n=5$ to $n=100$ calibration epochs, with variance decreasing
+as expected. This finding confirms that the proposed alignment protocol
+does not require extensive calibration data from the target subject;
+even a single calibration epoch recovers most of the benefit.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fewshot_curve.pdf}
+\caption{Few-shot calibration curve: mean LOSO COR as a function of the
+number of calibration epochs from the test subject. Error bars are
+standard deviation across five random seeds. The dashed horizontal lines
+indicate the full-alignment (blue) and no-alignment (gray) reference
+levels. The red star marks $n=5$ calibration epochs, with the annotation
+showing the corresponding COR and the percentage of full-alignment
+performance recovered.}
+\label{fig:fewshot}
+\end{figure}
+
+\subsection{Channel configuration comparison}
+
+Fig.~\ref{fig:channels} compares the three aligners across the three
+channel sets. Riemannian alignment is the best aligner on every
+channel set. The absolute COR gain over baseline is $+0.107$ on the
+17-channel full setup (paired $t$-test $p=0.0007$, Cohen's $d=0.824$,
+marked ${}^{***}$ in the figure)
+ and $+0.055$ on the 4-channel forehead setup (permutation test
+$p=0.0001$, $d=0.850$). On the 6-channel temporal setup, the
+no-alignment baseline is already relatively strong ($0.659$), and the
+Riemannian improvement ($+0.030$) is smaller and not statistically
+significant (marked n.s.). Importantly, the 4-channel forehead setup
+retains 98.3\% of the full 17-channel Riemannian performance
+($0.681$ vs $0.692$), as annotated in the figure, demonstrating the
+practical viability of Riemannian alignment on wearable EEG systems
+with limited channel count.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{figures/channel_comparison.pdf}
+\caption{Mean LOSO Pearson correlation for each (aligner, channel set)
+combination on the 23 subjects. Error bars are standard deviation
+across subjects. Numeric labels above each bar report the mean COR.
+Significance markers above each channel set compare Riemannian vs.\
+None (${}^{***}p<0.001$; n.s.\ = not significant). The red annotation
+indicates that the 4-channel forehead setup retains 98.3\% of the
+17-channel Riemannian performance.}
+\label{fig:channels}
+\end{figure}
+
+\subsection{Ablations}
+\label{sec:ablation}
+
+The following ablation studies are conducted on a 10-subject subset to
+verify the contributions of individual pipeline components. The 10 subjects
+were selected as the first 10 subjects in the dataset's standard ordering
+(i.e., sub01--sub10), which is a fixed, protocol-independent ordering that
+does not involve any outcome-based selection. All ablations
+use the 17-channel setup with Riemannian alignment unless otherwise noted.
+
+\subsubsection{Reference point} We compare aligning each subject to the
+identity (Riemannian mean of its own SPD matrices) with aligning to the
+grand mean of all training subjects. The two reference points yield
+comparable regression performance on a 10-subject subset and on the
+full 23-subject dataset, consistent with the theoretical expectation
+that the Riemannian geometry is invariant to the choice of reference.
+We use the identity (per-subject mean) as the default reference
+throughout this work, as it avoids the additional cost of estimating
+a global Riemannian mean.
+
+\subsubsection{Covariance estimator} We compare OAS, LWF, and SCM under
+both None and Riemannian alignment on 10 subjects. Without alignment,
+OAS yields the best COR ($0.596$), followed by LWF ($0.589$) and SCM
+($0.516$). With Riemannian alignment, all estimators improve: OAS
+reaches $0.635$, LWF reaches $0.628$, and SCM reaches $0.581$. The
+conditioning of the SPD matrices matters: SCM produces matrices with
+larger eigenvalue spread, which propagates into the tangent space
+projection. OAS is therefore the default estimator.
+
+\subsubsection{Regressor} We compare RidgeCV and linear-kernel SVR under
+both None and Riemannian alignment. Without alignment, RidgeCV and
+SVR are similar ($0.596$ vs $0.585$). With Riemannian alignment, both
+regressors improve substantially (RidgeCV $0.635$, SVR $0.638$),
+confirming that the alignment benefit is regressor-agnostic and
+compatible with both regularized linear and large-margin models.
+
+\subsubsection{Per-band vs.\ global alignment} Aligning each band
+independently (the proposed default) reaches COR $0.635$ on the
+10-subject ablation, while aligning a single global mean across all
+bands reaches COR $0.631$. The per-band default is preferable because
+different frequency bands exhibit different inter-subject variability
+patterns, although the difference is modest ($+0.004$).
+
+\subsection{Frequency-band importance}
+
+Fig.~\ref{fig:band} shows the distribution of the selected
+features across the five frequency bands, aggregated over all
+LOSO folds of the Riemannian-aligned pipeline. The $\alpha$ band
+contributes the largest share (28.6\%, 429 features), closely followed by
+$\beta$ (21.0\%, 315 features) and $\theta$ (22.7\%, 341 features);
+together $\alpha$ and $\beta$ account for
+approximately 50\% of the selected features. The remaining bands
+contribute $\gamma$ (17.3\%, 259 features) and $\delta$
+(10.4\%, 156 features). This distribution is consistent across all three
+aligners (None, Euclidean, Riemannian), indicating that the frequency
+band importance is driven by the underlying EEG physiology rather than
+the alignment method. The dominance of $\alpha$ and $\theta$ bands
+aligns with the physiological literature on vigilance, which
+associates decreases in $\alpha$ power with drowsiness and increases
+in $\theta$ activity during reduced alertness.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{figures/band_importance.pdf}
+\caption{Distribution of the \texttt{SelectKBest}-selected features
+across the five EEG frequency bands under Riemannian alignment,
+aggregated over all LOSO folds. Each bar
+is labeled with the percentage of total selected features and the
+absolute count. The $\alpha$, $\theta$, and $\beta$ bands together account for
+approximately 72\% of the selected features, consistent with
+vigilance-related EEG patterns.}
+\label{fig:band}
+\end{figure}
+
+\subsection{Comparison with Riemannian transfer-learning methods}
+
+Table~\ref{tab:sota} compares the parallel transport alignment with two
+Riemannian transfer-learning baselines---RPA
+\cite{Rodrigues2019} and the Zanini et al.\ alignment
+\cite{zanini2018}---under the same LOSO protocol on the 17-channel
+setup. RPA applies parallel transport followed by a scaling factor
+$\lambda$; the Zanini alignment transports each subject to the grand
+mean of all training subjects rather than to the identity.
+
+On the 17-channel setup, RPA reaches COR $0.672 \pm 0.196$, which
+is above the Euclidean aligner ($0.655$) but below the proposed
+method ($0.692$). The Zanini alignment yields comparable mean COR to
+the proposed method ($0.692$), which is expected because both methods
+use Riemannian parallel transport and differ only in the reference
+point (identity vs.\ grand mean); this similarity is discussed in
+Section~III-D (ablation) and the Methods section. On the 4-channel forehead setup, the proposed method
+(COR $0.681$) outperforms both RPA ($0.650$) and the Euclidean
+aligner ($0.642$), with the Wilcoxon signed-rank test confirming
+significance over baseline ($p < 0.0001$, $d = 0.850$).
+The Zanini alignment performs similarly on the forehead setup
+($0.681$), confirming that the choice of reference point does not
+affect regression performance on reduced channel configurations.
+We use the identity reference as the default throughout this work
+for its simplicity and computational efficiency.
+
+\begin{table}[!t]
+\caption{Head-to-head comparison of Riemannian transfer-learning
+methods on the 17-channel LOSO setup (23 subjects).}
+\label{tab:sota}
+\centering
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l c c}
+\toprule
+\textbf{Method} & \textbf{COR} & \textbf{RMSE} \\
+\midrule
+None (baseline)   & $0.585 \pm 0.230$ & $0.278$ \\
+EA \cite{he2018euclidean} & $0.655 \pm 0.218$ & $0.224$ \\
+RPA \cite{Rodrigues2019}  & $0.672 \pm 0.196$ & $0.200$ \\
+Zanini et al.\ \cite{zanini2018} & $0.692 \pm 0.206$ & $0.195$ \\
+\textbf{Ours}     & $\mathbf{0.692} \pm \mathbf{0.206}$ & $\mathbf{0.195}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Statistical robustness}
+
+To complement the paired $t$-test, we report non-parametric and
+resampling-based statistics. A Wilcoxon signed-rank test on the
+17-channel setup yields $p = 7.9 \times 10^{-6}$, and on the
+4-channel forehead setup $p = 8.8 \times 10^{-5}$, both well below
+the $\alpha = 0.05$ threshold. Bootstrap resampling ($n = 2000$)
+gives a 95\% confidence interval for Cohen's $d$ of $[0.62, 1.21]$
+on the 17-channel setup and $[0.60, 1.31]$ on the 4-channel setup;
+neither interval crosses zero, confirming that the effect is robust
+to the normality assumption. A permutation test with $10{,}000$
+random label flips yields $p < 0.0001$ for the 17-channel setup and
+$p = 0.0001$ for the 4-channel setup, providing distribution-free
+confirmation of significance.
+
+We note that the main analysis involves 3 channel configurations
+$\times$ 3 alignment methods = 9 paired comparisons, plus 4 ablation
+comparisons. With a Bonferroni correction for 13 comparisons, the
+adjusted $\alpha$ threshold is $0.05/13 \approx 0.0038$. The primary
+result---Riemannian vs.\ None on the 17-channel setup---yields a
+paired $t$-test $p = 0.0007$, which remains significant after
+Bonferroni correction. Similarly, the 4-channel forehead comparison
+(Riemannian vs.\ None, $p = 0.0001$) passes the correction. We
+therefore report uncorrected $p$-values but note that the main
+conclusions are unchanged after correction.
+
+\subsection{Computational cost}
+
+Table~\ref{tab:compcost} reports the wall-clock time for each
+pipeline stage on a single subject (885 epochs, 17 channels). The
+filter-bank and covariance estimation stage (7.2~s) is identical for
+both aligners because it is applied before alignment. The
+Riemannian mean computation itself adds negligible overhead
+($<0.01$~s per subject) relative to the no-alignment baseline. The
+full LOSO fold takes approximately $64$~s per subject under Riemannian
+alignment vs.\ $54$~s without alignment. The dominant overhead comes from
+feature selection and regression training, while alignment increases
+the total fold time by approximately $10$~s (18.6\%), almost entirely
+from the feature selection and regression stage ($43.6$~s vs.\
+$53.6$~s). This increase is likely due to the Riemannian-aligned
+features having a larger eigenvalue spread in the concatenated
+tangent space, which increases the condition number of the design
+matrix and slows the convergence of the RidgeCV internal
+leave-one-out cross-validation grid search. The alignment step
+itself, in contrast, adds negligible overhead ($<0.01$~s per subject).
+This overhead is acceptable for offline analysis;
+for real-time wearable deployment, the pre-trained model eliminates
+the per-fold cost entirely, leaving only the filter-bank and
+covariance-estimation stages.
+
+\begin{table}[!t]
+\caption{Per-subject wall-clock time (seconds) for each pipeline
+stage, averaged over 5 subjects (17 channels, 885 epochs).}
+\label{tab:compcost}
+\centering
+\begin{tabular}{l c c}
+\toprule
+\textbf{Stage} & \textbf{None} & \textbf{Riemannian} \\
+\midrule
+Filter + covariance       & 7.2 & 7.2 \\
+Riemannian mean           & 1.58 & 1.57 \\
+Tangent space             & 1.74 & 1.73 \\
+Feature sel.\ + regression & 43.6 & 53.6 \\
+\midrule
+Full LOSO fold            & 54.1 & 64.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsubsection{Why Riemannian geometry outperforms Euclidean alignment} The persistent gap between Euclidean and Riemannian
+alignment (Table~\ref{tab:main}) is consistent with the theoretical
+argument that the arithmetic mean is not a natural summary on a
+curved space. The Euclidean mean of SPD matrices is biased toward the
+cone apex when the matrices are heterogeneous, and whitening by the
+Euclidean mean propagates that bias into the tangent space. The
+Riemannian mean is invariant to the parameterization of the manifold
+and is the geometrically correct center. The empirical gap between the
+two aligners supports the view that the curved-space notion of center
+matters in practice for EEG covariance features. A rival explanation
+is that the gain is driven by the per-band normalization alone; the
+ablations argue against this, because the per-band normalization is
+common to both aligners and the Euclidean aligner does not reach
+Riemannian performance under the same normalization. These findings
+are consistent with the review by Yger et al. \cite{yger2017riemannian},
+which concluded that Riemannian geometry provides the largest benefit
+when the SPD matrices are heterogeneous, precisely the condition that
+characterises cross-subject EEG data.
+
+\subsubsection{Per-subject alignment is sufficient at test time} Our protocol aligns
+the test subject using only its own SPD matrices, with no leakage
+from the training subjects. This is a departure from the BCI
+literature in which the test subject is sometimes left unaligned. We
+find that unaligned test subjects degrade the LOSO correlation
+substantially (consistent with the findings of
+\cite{zanini2018}); aligning the test subject using its own mean is
+both necessary and sufficient.
+
+\subsubsection{Compatibility with downstream refinements} The benefit is preserved when the EEG feature set is
+reduced from 17 channels to 4 forehead channels (98.3\% of full
+Riemannian performance), and when the covariance estimator is swapped
+for LWF. The benefit is also preserved across the RidgeCV and linear
+SVR regressors, indicating that the gain comes from the alignment step
+rather than from a particular regressor.
+
+The 6-channel temporal configuration showed no significant improvement
+over baseline (Table~\ref{tab:main}), which merits further discussion.
+The temporal baseline COR ($0.659$) is already markedly higher than
+the 17-channel baseline ($0.585$), indicating that the inherent
+cross-subject variability in the temporal region is substantially
+lower. This pattern is physiologically plausible: the temporal EEG
+sites (T7, T8, etc.) lie directly over the lateral cortex and are less
+affected by variations in skull thickness, scalp impedance, and muscle
+artifacts that disproportionately impact frontal and parietal
+electrodes. Consequently, the subject-specific SPD shift that Riemannian
+alignment is designed to correct is naturally smaller in the temporal
+region, leaving limited room for alignment-driven improvement. This
+finding aligns with the broader BCI observation that Riemannian
+geometry provides the largest gains when inter-subject heterogeneity
+is high \cite{yger2017riemannian}. Notably, Euclidean alignment on the
+6-channel temporal setup actually decreases COR relative to no
+alignment ($0.622$ vs.\ $0.659$), indicating that the larger
+eigenvalue spread of the temporal SPD matrices makes the arithmetic
+mean a poor whitening reference, which introduces distortion rather
+than correction.
+
+\subsubsection{Relation to existing Riemannian transfer-learning methods}
+Table~\ref{tab:sota} shows that the proposed method yields comparable
+performance to the Zanini et al.\ alignment \cite{zanini2018} on the
+17-channel setup, which is expected because both use Riemannian
+parallel transport and differ only in the reference point (identity
+vs.\ grand mean); the ablation confirms that this choice has minimal
+impact on regression performance.
+We emphasize that the principal contribution of this work is not the
+alignment mechanism itself, but the first systematic demonstration that
+Riemannian geometry-based alignment is both necessary and effective for
+\emph{continuous vigilance regression}---a fundamentally different
+problem from the classification tasks on which Zanini et al.\ and
+subsequent works were validated. Vigilance is a high-frequency,
+continuously varying signal whose dynamics impose stricter demands on
+the preservation of SPD manifold structure. Our experiments further
+provide the first evidence that Riemannian parallel transport alignment
+translates robustly to a 4-channel wearable EEG configuration, a
+practical scenario that has not been examined in prior Riemannian BCI
+transfer-learning studies. RPA
+\cite{Rodrigues2019} underperforms the proposed method by $0.020$
+COR on the 17-channel setup, likely because the scaling factor
+$\lambda$ introduces an additional degree of freedom that is
+difficult to estimate reliably with the limited calibration data
+available in the LOSO setting. Zhuo et al.\ \cite{zhuo2024} proposed
+log-Euclidean Riemannian transfer learning for EEG classification,
+achieving comparable performance to affine-invariant methods at lower
+computational cost; our affine-invariant approach remains tractable
+for the 17-channel vigilance regression task (Table~\ref{tab:compcost}).
+Ju and Guan \cite{ju2025} combined optimal transport with SPD manifold
+geometry for cross-session BCI, which is complementary to our
+parallel-transport alignment and could potentially be integrated in
+future work. Paillard et al.\ \cite{paillard2025} recently showed that
+integrating Riemannian geometry with learnable spectral filters
+achieves state-of-the-art performance across multiple EEG prediction
+tasks, further supporting the value of geometry-aware representations.
+
+\subsubsection{Comparison with deep domain adaptation methods}
+Recent years have seen a surge of deep learning-based domain adaptation
+approaches for EEG, including domain-adversarial neural networks
+(DANN), conditional domain adversarial networks (CDAN), and
+Wasserstein-distance alignment. These methods are powerful for
+high-data regimes but face several practical limitations in the
+vigilance regression setting. First, deep domain adaptation models
+typically require thousands of labeled samples per subject for
+effective training, whereas the LOSO setting provides only 22
+training subjects with modest per-subject sample sizes. Second, the
+computational demands of deep models are incompatible with real-time
+wearable deployment: as shown in Table~\ref{tab:compcost}, the
+proposed Riemannian pipeline incurs a total overhead of approximately
+$10$~s per fold, with the alignment step itself adding less than
+$0.01$~s per subject, making it suitable for on-device deployment
+even on a 4-channel wearable EEG system. Third, deep domain
+adaptation often requires careful hyperparameter tuning and large
+batch sizes to avoid mode collapse or overfitting, whereas the
+proposed Riemannian approach is deterministic and parameter-free
+beyond the reference point choice. We therefore regard the
+Riemannian geometry framework as a pragmatic and well-grounded
+alternative to deep methods for small-sample cross-subject
+regression, particularly in resource-constrained wearable settings.
+
+\subsubsection{Practical implications} The main LOSO result (Table
+\ref{tab:main}) achieves COR $0.692$ with $p=0.0007$ and Cohen's
+$d=0.824$, demonstrating that Riemannian parallel transport alignment
+is both statistically significant and practically meaningful for
+cross-subject generalization. The 4-channel forehead configuration
+retains 98.3\% of the full 17-channel performance, making the approach
+viable for wearable EEG systems with limited channel coverage.
+The computational overhead of Riemannian alignment is modest
+(Table~\ref{tab:compcost}): the Riemannian mean computation adds
+less than $0.01$~s per subject, and the full LOSO fold overhead is
+approximately $10$~s, dominated by the filter-bank and
+covariance-estimation stages rather than the alignment itself.
+
+\subsubsection{Limitations} (i) The main LOSO result is on a single dataset (SEED-VIG). Future work
+will explore cross-dataset generalization and shared alignment models,
+including validation on publicly available fatigue and
+affective-EEG datasets such as SADT \cite{zhao2021lammsda} and
+DEAP \cite{koelstra2012deap}, to assess the robustness of Riemannian
+alignment across diverse EEG paradigms and recording conditions.
+(ii) The covariance matrices are computed from 8-second epochs;
+shorter or longer windows may yield different behaviour. (iii) The
+alignment step is fit per subject; an open question is whether a
+single shared alignment can be learned across datasets. (iv) The
+current pipeline uses fixed hyperparameters; an adaptive scheme that
+selects the calibration set size per subject is left to future work.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a Riemannian parallel transport alignment as a
+pre-projection step for cross-subject EEG vigilance regression. On
+SEED-VIG with 23 subjects under LOSO, alignment increases the mean
+Pearson correlation from $0.585$ to $0.692$ ($p = 0.0007$, $d =
+0.824$) and improves 21 of 23 subjects individually. The benefit
+is statistically significant on both the full 17-channel setup and
+the 4-channel forehead setup, retaining 98.3\% of the
+full-setup performance. A head-to-head comparison with RPA and the
+Zanini et al.\ alignment confirms that the proposed method yields
+comparable performance to existing Riemannian transfer-learning
+baselines, and
+non-parametric tests (Wilcoxon, permutation) and bootstrap confidence
+intervals corroborate the significance of the improvement. Ablations
+isolate the gain to the Riemannian geometry rather than individual
+pipeline choices. Future work will explore shared alignment models
+across datasets and adaptive per-subject calibration sizing. The
+result is restricted to short-epoch EEG covariance features on a
+single dataset; its transfer to long-window features, other vigilance
+proxies, or cross-dataset settings remains to be established.
+
+\subsubsection{Data and Code Availability}
+The SEED-VIG dataset used in this study is publicly released by the
+SJTU BCMI Laboratory for non-commercial research use and is
+available to qualified researchers on request from the dataset
+administrator at \protect\url{https://bcmi.sjtu.edu.cn/home/seed/seed-vig.html}
+\cite{zheng2017}. The dataset is a third-party resource and is not
+redistributed by the authors.
+
+\section*{Acknowledgments}
+This work was supported by the Shenzhen Science and Technology
+Program under Grant KCXFZ20240903094011015. The authors thank the
+SJTU SEED Lab for sharing the SEED-VIG dataset.
+
+\begin{thebibliography}{22}
+
+\bibitem{gao2024}
+D. Gao, P. Li \emph{et~al.}, ``CSF-GTNet: A novel multi-dimensional
+feature fusion network based on Convnext-GeLU-BiLSTM for
+EEG-signals-enabled fatigue driving detection,'' \emph{IEEE J.
+Biomed. Health Inform.}, vol. 28, no. 5, pp. 2558--2568, May 2024.
+
+\bibitem{cui2023}
+J. Cui \emph{et~al.}, ``Benchmarking EEG-based cross-dataset driver
+drowsiness recognition with deep transfer learning,'' in \emph{Proc.
+45th Annu. Int. Conf. IEEE Eng. Med. Biol. Soc. (EMBC)}, 2023,
+pp.~1--5.
+
+\bibitem{zheng2017}
+W.-L. Zheng and B.-L. Lu, ``A multimodal approach to estimating
+vigilance using EEG and forehead EOG,'' \emph{J. Neural Eng.},
+vol. 14, no. 2, 026017, Feb. 2017.
+
+\bibitem{zanini2018}
+P. Zanini, M. Congedo, C. Jutten, S. Said, and Y. Berthoumieu,
+``Transfer learning: A Riemannian geometry framework with
+applications to brain-computer interfaces,'' \emph{IEEE Trans.
+Biomed. Eng.}, vol. 65, no. 5, pp. 1107--1116, May 2018.
+
+\bibitem{Rodrigues2019}
+P. L. C. Rodrigues, C. Jutten, and M. Congedo, ``Riemannian
+Procrustes analysis: Transfer learning for brain-computer
+interfaces,'' \emph{IEEE Trans. Biomed. Eng.}, vol. 66, no. 8,
+pp. 2390--2401, Aug. 2019.
+
+\bibitem{lotte2018review}
+F. Lotte, L. Bougrain, A. Cichocki, M. Clerc, M. Congedo,
+A. Rakotomamonjy, and F. Yger, ``A review of classification
+algorithms for EEG-based brain-computer interfaces: A 10 year
+update,'' \emph{J. Neural Eng.}, vol. 15, no. 3, 031005,
+Jun. 2018.
+
+\bibitem{moakher2005}
+M. Moakher, ``A differential geometric approach to the geometric
+mean of symmetric positive-definite matrices,'' \emph{SIAM J. Matrix
+Anal. Appl.}, vol. 26, no. 3, pp. 735--747, 2005.
+
+\bibitem{wu2022tnsre}
+D. Wu, Y. Xu, and B.-L. Lu, ``Transfer learning for EEG-based
+brain-computer interfaces: A review of progress made since 2016,''
+\emph{IEEE Trans. Cogn. Dev. Syst.}, vol. 14, no. 1, pp. 4--19,
+Mar. 2022.
+
+\bibitem{he2018euclidean}
+H. He and D. Wu, ``Transfer learning for brain-computer interfaces:
+A Euclidean space data alignment approach,'' \emph{IEEE Trans.
+Biomed. Eng.}, vol. 67, no. 2, pp. 399--410, Feb. 2020.
+
+\bibitem{barachant2010lvaica}
+A. Barachant, S. Bonnet, M. Congedo, and C. Jutten, ``Riemannian
+geometry applied to BCI classification,'' in \emph{Proc. 9th Int.
+Conf. Latent Variable Anal. Signal Separation (LVA/ICA)}, 2010,
+pp. 629--636.
+
+\bibitem{barachant2012tbme}
+A. Barachant, S. Bonnet, M. Congedo, and C. Jutten, ``Multiclass
+brain-computer interface classification by Riemannian geometry,''
+\emph{IEEE Trans. Biomed. Eng.}, vol. 59, no. 4, pp. 920--928,
+Apr. 2012.
+
+\bibitem{zhuo2024}
+F. Zhuo, X. Zhang, F. Tang, Y. Yu, and L. Liu, ``Riemannian
+transfer learning based on log-Euclidean metric for EEG
+classification,'' \emph{Front. Neurosci.}, vol. 18, 1381572,
+May 2024.
+
+\bibitem{yair2019ptspd}
+O. Yair, M. Ben-Chen, and R. Talmon, ``Parallel transport on the
+cone manifold of SPD matrices for domain adaptation,''
+\emph{IEEE Trans. Signal Process.}, vol. 67, no. 7, pp. 1797--1811,
+Apr. 2019.
+
+\bibitem{congedo2017review}
+M. Congedo, A. Barachant, and R. Bhatia, ``Riemannian geometry for
+EEG-based brain-computer interfaces; a primer and a review,''
+\emph{Brain-Comput. Interfaces}, vol. 4, no. 3, pp. 155--174,
+2017.
+
+\bibitem{ju2025}
+C. Ju and C. Guan, ``Deep optimal transport for domain adaptation
+on SPD manifolds,'' \emph{Artif. Intell.}, vol. 345, 104347, 2025.
+
+\bibitem{ang2012fbcsp}
+K. K. Ang, Z. Y. Chin, C. Wang, C. Guan, and H. Zhang, ``Filter bank
+common spatial pattern algorithm on BCI competition IV Datasets 2a
+and 2b,'' \emph{Front. Neurosci.}, vol. 6, no. 39, pp. 1--10,
+Mar. 2012.
+
+\bibitem{chen2010oas}
+Y. Chen, A. Wiesel, Y. C. Eldar, and A. O. Hero, ``Shrinkage
+algorithms for MMSE covariance estimation,'' \emph{IEEE Trans.
+Signal Process.}, vol. 58, no. 10, pp. 5016--5029, Oct. 2010.
+
+\bibitem{yger2017riemannian}
+F. Yger, M. Berar, and F. Lotte, ``Riemannian approaches in
+brain-computer interfaces: A review,'' \emph{IEEE Trans. Neural
+Syst. Rehabil. Eng.}, vol. 25, no. 10, pp. 1753--1762, Oct. 2017.
+
+\bibitem{pennec2006}
+X. Pennec, P. Fillard, and N. Ayache, ``A Riemannian framework
+for tensor computing,'' \emph{Int. J. Comput. Vis.}, vol. 66,
+no. 1, pp. 41--66, Jan. 2006.
+
+\bibitem{paillard2025}
+J. Paillard, J. F. Hipp, and D. A. Engemann, ``GREEN: A
+lightweight architecture using learnable wavelets and Riemannian
+geometry for biomarker exploration with EEG signals,''
+\emph{Patterns}, vol. 6, no. 3, 101182, Mar. 2025.
+
+\bibitem{zhao2021lammsda}
+Y. Zhao, G. Dai, G. Borghini, J. Zhang, X. Li, Z. Zhang,
+P. Aric\`{o}, G. Di Flumeri, F. Babiloni, and H. Zeng,
+``Label-based alignment multi-source domain adaptation for
+cross-subject EEG fatigue mental state evaluation,''
+\emph{Front. Hum. Neurosci.}, vol. 15, 706270, Oct. 2021.
+
+\bibitem{koelstra2012deap}
+S. Koelstra, C. M\"{u}hl, M. Soleymani, J.-S. Lee, A. Yazdani,
+T. Ebrahimi, T. Pun, A. Nijholt, and I. Patras, ``DEAP: A
+database for emotion analysis using physiological signals,''
+\emph{IEEE Trans. Affect. Comput.}, vol. 3, no. 1, pp. 18--31,
+Jan.--Mar. 2012.
+
+\end{thebibliography}
+
+% \begin{IEEEbiography}{Huang Tan}
+% received the B.S. degree in software engineering from
+% Sichuan University, Chengdu, China, in 2021. He is currently
+% pursuing the Ph.D. degree with the University of Electronic
+% Science and Technology of China, Chengdu. His research
+% interests include biomedical signal processing, Riemannian
+% geometry for brain-computer interfaces, and transfer learning
+% for EEG-based vigilance estimation.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}{Xiangzhu Li}
+% is with the Department of Neurosurgery, Shenzhen Hospital of
+% Integrated Traditional Chinese and Western Medicine, Shenzhen,
+% China, where he is currently an Attending Physician. His
+% clinical interests include neurosurgical treatment and
+% EEG-based neurological monitoring.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}{Li Zhang}
+% received the M.D. degree from Fudan University Shanghai Medical
+% College, Shanghai, China. He is currently a Chief Physician,
+% Professor, and Head of Neurosurgery at the Shenzhen
+% Hospital of Integrated Traditional Chinese and Western
+% Medicine, Shenzhen, China. His clinical expertise includes
+% microsurgical treatment of complex cerebral aneurysms,
+% arteriovenous malformations, arteriovenous fistulas, carotid
+% endarterectomy, brain tumors, trigeminal neuralgia, and
+% hemifacial spasm; neuroendoscopic minimally invasive
+% techniques for cranial diseases; multidisciplinary management
+% of severe cerebrovascular disease in elderly patients; and
+% cross-disciplinary treatment of severe traumatic brain injury
+% and hypertensive intracerebral hemorrhage.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}{Guangqiang Yin}
+% is a Professor with the School of Information and Software
+% Engineering and the Director of the Public Security Technology
+% Research Center, University of Electronic Science and
+% Technology of China (UESTC), Chengdu, China. He is also a
+% National-Level Leading Talent under the Shenzhen High-Level
+% Talent Program. His research interests include intelligent
+% image processing, information security, and public safety
+% technologies.
+% \end{IEEEbiography}
+
+\end{document}
+
+

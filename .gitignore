@@ -7,7 +7,15 @@ results_0614/
 figures/
 
 # Paper (manuscript, figures, templates)
-paper/
+paper/paper_tbme.aux
+paper/paper_tbme.bbl
+paper/paper_tbme.blg
+paper/paper_tbme.fdb_latexmk
+paper/paper_tbme.fls
+paper/paper_tbme.log
+paper/paper_tbme.synctex.gz
+paper/paper_tbme.pdf
+paper/figures/
 
 # Python cache
 __pycache__/

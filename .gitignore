@@ -1,0 +1,28 @@
+# Results (experiment outputs)
+results/
+results_0612/
+results_0614/
+
+# Exploratory figures (not part of publication)
+figures/
+
+# Paper (manuscript, figures, templates)
+paper/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temp nature skills (agent plugins)
+_temp_nature_skills/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
